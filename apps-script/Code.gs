@@ -14,7 +14,7 @@ const EXAM_HEADERS = [
   'id', 'titulo', 'grupo_destino', 'activo', 'codigo_acceso', 'tiempo_min',
   'barajar_preguntas', 'barajar_opciones', 'mostrar_nota', 'permitir_negativa',
   'preguntas_json', 'creado', 'control_salidas', 'salidas_permitidas', 'penalizacion',
-  'pantalla_completa', 'hoja_id'
+  'pantalla_completa', 'hoja_id', 'revision'
 ];
 // Hoja de resultados (una por examen). Orden de las columnas de las hojas nuevas; las hojas de versiones
 // anteriores se leen por el nombre de la cabecera y reciben al final las columnas extra que les falten.
@@ -46,7 +46,7 @@ const IMAGE_CHUNK = 40000;             // una celda admite 50 000 caracteres
 const CACHE_PART = 90000;              // una entrada de caché admite 100 KB
 const CACHE_SECONDS = 21600;
 const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
-const FEATURES = ['imagenes', 'abiertas', 'correccion'];         // capacidades de esta versión del script (las lee el panel)
+const FEATURES = ['imagenes', 'abiertas', 'correccion', 'revision'];         // capacidades de esta versión del script (las lee el panel)
 const DEFAULT_ALLOWED_EXITS = 3;   // salidas permitidas antes del envío automático
 const MAX_ALLOWED_EXITS = 20;
 
@@ -84,6 +84,8 @@ function handlePost_(body) {
     case 'submit': return submit_(body);
     case 'createExam': return createExam_(body);
     case 'setActive': return setActive_(body);
+    case 'setReview': return setReview_(body);
+    case 'review': return review_(body);
     case 'results': return results_(body);
     case 'grade': return grade_(body);
     default: return fail_('bad_request', 'Acción no reconocida.');
@@ -395,7 +397,8 @@ function createExam_(p) {
       allowedExits_(p.salidas_permitidas),
       penalizacion,
       toBool_(p.pantalla_completa),
-      resultsSheet.getSheetId()
+      resultsSheet.getSheetId(),
+      false // revisión: la publica el profesor desde el panel cuando todos han hecho el examen
     ], [1, 3, 5, 15]);
     formatExamsSheet_(getExamsSheet_()); // también embellece la hoja de quien ya la tenía
     storeImages_(id, images);
@@ -412,18 +415,87 @@ function createExam_(p) {
 }
 
 function setActive_(p) {
+  return setExamFlag_(p, 'activo', p.activo);
+}
+
+// Publica u oculta la revisión: con ella, cada alumno ve sus respuestas y las correctas.
+function setReview_(p) {
+  var res = setExamFlag_(p, 'revision', p.revision);
+  if (res.ok) formatExamsSheet_(getExamsSheet_()); // da formato a la columna en hojas de versiones anteriores
+  return res;
+}
+
+function setExamFlag_(p, name, value) {
   var auth = checkToken_(p.token);
   if (auth) return auth;
   var sheet = getExamsSheet_();
   var rows = sheet.getDataRange().getValues();
-  var col = EXAM_HEADERS.indexOf('activo');
+  var col = EXAM_HEADERS.indexOf(name);
   for (var i = 1; i < rows.length; i++) {
     if (String(rows[i][0]) === String(p.id)) {
-      sheet.getRange(i + 1, col + 1).setValue(toBool_(p.activo));
-      return { ok: true, id: String(p.id), activo: toBool_(p.activo) };
+      sheet.getRange(i + 1, col + 1).setValue(toBool_(value));
+      var out = { ok: true, id: String(p.id) };
+      out[name] = toBool_(value);
+      return out;
     }
   }
   return fail_('not_found', 'Este examen no existe.');
+}
+
+// Revisión del alumno: sus respuestas, las correctas y los puntos de las abiertas. Solo si el profesor la ha
+// publicado, y solo del envío cuyo identificador (aleatorio, guardado en el dispositivo del alumno) se presenta.
+// Funciona aunque el examen esté cerrado.
+function review_(p) {
+  var exam = findExam_(p.examId);
+  if (!exam) return fail_('not_found', 'Este examen no existe.');
+  if (!exam.revision) return fail_('review_closed', 'Tu profesor todavía no ha publicado la revisión de este examen.');
+  var envioId = typeof p.envioId === 'string' ? p.envioId.trim().slice(0, 64) : '';
+  if (!envioId) return fail_('bad_request', 'Falta el identificador del envío.');
+
+  var questions = JSON.parse(exam.preguntas_json);
+  var sh = findResultsSheet_(exam);
+  var rows = sh ? sh.getDataRange().getValues() : [];
+  var H = rows.length ? headerMap_(rows[0].map(String)) : {};
+  var row = null;
+  if (H.envio_id !== undefined) {
+    for (var i = 1; i < rows.length; i++) {
+      if (String(rows[i][H.envio_id]) === envioId) { row = rows[i]; break; }
+    }
+  }
+  if (!row) return fail_('send_not_found', 'No se encuentra tu examen entre los enviados.');
+
+  var answers = {};
+  try { answers = JSON.parse(String(row[H.respuestas_json] || '{}')) || {}; } catch (err) { answers = {}; }
+  var openQs = questions.filter(isOpen_);
+  var get = function (name) { return H[name] === undefined ? '' : row[H[name]]; };
+  return {
+    ok: true,
+    review: {
+      titulo: exam.titulo,
+      nombre: String(get('nombre')),
+      apellidos: String(get('apellidos')),
+      nota: finalGrade_(exam, openQs, questions, row, H),
+      aciertos: get('aciertos'), errores: get('errores'), blancos: get('blancos'),
+      imagenes: loadImages_(exam.id, questions),
+      questions: questions.map(function (q) {
+        var base = { id: q.id, text: q.text, valor: questionValue_(q) };
+        if (isOpen_(q)) {
+          var c = openColumns_(q, questions);
+          var pts = H[c.pts] === undefined ? '' : row[H[c.pts]];
+          base.tipo = 'abierta';
+          base.respuesta = H[c.resp] === undefined ? '' : String(row[H[c.resp]]);
+          base.puntos = pts === '' ? null : Number(pts);
+          return base;
+        }
+        var given = answers[q.id];
+        base.tipo = 'test';
+        base.options = (q.options || []).map(function (o) { return { id: o.id, text: o.text }; });
+        base.correcta = q.correct;
+        base.respuesta = typeof given === 'string' && given !== '' ? given : null;
+        return base;
+      })
+    }
+  };
 }
 
 function listExams_(params) {
@@ -441,6 +513,7 @@ function listExams_(params) {
       salidas_permitidas: ex.salidas_permitidas,
       penalizacion: ex.penalizacion,
       pantalla_completa: ex.pantalla_completa,
+      revision: ex.revision,
       codigo_acceso: ex.codigo_acceso,
       tiempo_min: ex.tiempo_min,
       n_preguntas: JSON.parse(ex.preguntas_json).length,
@@ -960,10 +1033,14 @@ function headerMap_(headers) {
 }
 
 // Si la hoja es de una versión anterior (menos columnas), añade las cabeceras que faltan.
+// Devuelve true si ha añadido alguna.
 function ensureHeaders_(sheet, headers) {
+  var added = false;
   for (var i = sheet.getLastColumn(); i < headers.length; i++) {
     sheet.getRange(1, i + 1).setValue(headers[i]);
+    added = true;
   }
+  return added;
 }
 
 function getExamsSheet_() {
@@ -975,8 +1052,8 @@ function getExamsSheet_() {
     sh.setFrozenRows(1);
     setTextColumns_(sh, [1, 3, 5]);
     formatExamsSheet_(sh);
-  } else {
-    ensureHeaders_(sh, EXAM_HEADERS);
+  } else if (ensureHeaders_(sh, EXAM_HEADERS)) {
+    formatExamsSheet_(sh); // las columnas nuevas (p. ej. revision) con el mismo aspecto que las demás
   }
   return sh;
 }
@@ -1072,6 +1149,22 @@ function formatExamsSheet_(sh) {
   var col = function (name) { return EXAM_HEADERS.indexOf(name) + 1; };
   var rowsMax = sh.getMaxRows();
   try {
+    // Exámenes publicados antes de existir la columna «revision»: vacía equivale a FALSO; se escribe para que se vea igual.
+    var last = sh.getLastRow();
+    if (last > 1) {
+      var ids = sh.getRange(2, 1, last - 1, 1).getValues();
+      var rev = sh.getRange(2, col('revision'), last - 1, 1);
+      var vals = rev.getValues();
+      var changed = false;
+      for (var r = 0; r < vals.length; r++) {
+        if (ids[r][0] !== '' && vals[r][0] === '') { vals[r][0] = false; changed = true; }
+      }
+      if (changed) rev.setValues(vals);
+    }
+  } catch (err) {
+    console.error(err);
+  }
+  try {
     sh.setFrozenRows(1);
     sh.setFrozenColumns(2);
     sh.setColumnWidth(col('id'), 95);
@@ -1079,6 +1172,7 @@ function formatExamsSheet_(sh) {
     sh.setColumnWidth(col('grupo_destino'), 90);
     sh.setColumnWidth(col('codigo_acceso'), 100);
     sh.setColumnWidth(col('creado'), 140);
+    sh.setColumnWidth(col('revision'), 90);
     sh.hideColumns(col('preguntas_json'), 1);
     sh.hideColumns(col('hoja_id'), 1);
   } catch (err) {
@@ -1094,15 +1188,17 @@ function formatExamsSheet_(sh) {
     sh.getRange(2, col('activo'), rowsMax - 1, n - col('activo') + 1).setHorizontalAlignment('center');
     sh.getRange(2, col('titulo'), rowsMax - 1, 1).setFontWeight('bold');
     sh.getRange(2, col('creado'), rowsMax - 1, 1).setNumberFormat('dd/mm/yyyy hh:mm');
-    var letter = String.fromCharCode(64 + col('activo'));
-    var rule = function (formula, bg, fg) {
-      return SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(formula).setBackground(bg).setFontColor(fg).setBold(true)
-        .setRanges([sh.getRange(2, col('activo'), rowsMax - 1, 1)]).build();
-    };
-    sh.setConditionalFormatRules([
-      rule('=$' + letter + '2=TRUE', '#dff3e4', '#176b34'),
-      rule('=$' + letter + '2=FALSE', '#fde2e1', '#a4262c')
-    ]);
+    // «activo» y «revision»: VERDADERO en verde y FALSO en rojo.
+    var rules = [];
+    ['activo', 'revision'].forEach(function (name) {
+      var letter = String.fromCharCode(64 + col(name));
+      var rule = function (formula, bg, fg) {
+        return SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(formula).setBackground(bg).setFontColor(fg).setBold(true)
+          .setRanges([sh.getRange(2, col(name), rowsMax - 1, 1)]).build();
+      };
+      rules.push(rule('=$' + letter + '2=TRUE', '#dff3e4', '#176b34'), rule('=$' + letter + '2=FALSE', '#fde2e1', '#a4262c'));
+    });
+    sh.setConditionalFormatRules(rules);
     var old = sh.getBandings();
     for (var i = 0; i < old.length; i++) old[i].remove();
     sh.getRange(2, 1, rowsMax - 1, n).applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, false, false);
@@ -1189,7 +1285,8 @@ function readExams_() {
       salidas_permitidas: allowedExits_(r[13]),
       penalizacion: storedPenalty_(r[14]),
       pantalla_completa: toBool_(r[15]),
-      hoja_id: r[16] === '' || r[16] === undefined ? '' : String(r[16])
+      hoja_id: r[16] === '' || r[16] === undefined ? '' : String(r[16]),
+      revision: toBool_(r[17])
     });
   }
   return out;
@@ -1206,8 +1303,9 @@ function findExam_(id) {
 
 /**
  * Opcional: ejecútala una vez a mano desde el editor para crear la hoja
- * "Examenes" y comprobar que los permisos están concedidos.
+ * "Examenes" y comprobar que los permisos están concedidos. También vuelve a dar
+ * formato a la hoja "Examenes" (útil tras actualizar el script).
  */
 function setup() {
-  getExamsSheet_();
+  formatExamsSheet_(getExamsSheet_());
 }

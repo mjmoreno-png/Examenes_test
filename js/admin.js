@@ -177,6 +177,30 @@ function showPanel(initialExams) {
           }
           refreshList();
         });
+        // Revisión: con ella, cada alumno ve sus fallos y las respuestas correctas al abrir el enlace en su dispositivo.
+        // Un Code.gs anterior no devuelve `revision`: entonces no se ofrece.
+        const reviewToggle =
+          typeof ex.revision === "boolean"
+            ? h("button", { class: "btn secondary small", type: "button" }, ex.revision ? "Ocultar revisión" : "Publicar revisión")
+            : null;
+        reviewToggle?.addEventListener("click", async () => {
+          if (
+            !ex.revision &&
+            ex.activo &&
+            !confirm("El examen sigue abierto: quien todavía no lo haya hecho podría ver las soluciones a través de un compañero. ¿Publicar la revisión igualmente?")
+          ) {
+            return;
+          }
+          reviewToggle.disabled = true;
+          try {
+            const res = await apiPost({ action: "setReview", token, id: ex.id, revision: !ex.revision });
+            if (res.error === "unauthorized") return onUnauthorized();
+            if (!res.ok) alert(res.message);
+          } catch (e) {
+            alert(errorText(e));
+          }
+          refreshList();
+        });
         const copy = h("button", { class: "btn secondary small", type: "button" }, "Copiar enlace");
         copy.addEventListener("click", () => copyText(link, copy));
         const exportBtn = h("button", { class: "btn secondary small", type: "button" }, "Exportar notas (CSV)");
@@ -193,7 +217,7 @@ function showPanel(initialExams) {
         return h(
           "div",
           { class: "exam-item" },
-          h("h3", {}, ex.titulo, " ", h("span", { class: `badge ${ex.activo ? "on" : "off"}` }, ex.activo ? "Abierto" : "Cerrado"), ex.control_salidas ? " " : null, ex.control_salidas ? h("span", { class: "badge on" }, `Vigilado · ${ex.salidas_permitidas ?? 3} salidas${ex.pantalla_completa ? " · pantalla completa" : ""}`) : null),
+          h("h3", {}, ex.titulo, " ", h("span", { class: `badge ${ex.activo ? "on" : "off"}` }, ex.activo ? "Abierto" : "Cerrado"), ex.control_salidas ? " " : null, ex.control_salidas ? h("span", { class: "badge on" }, `Vigilado · ${ex.salidas_permitidas ?? 3} salidas${ex.pantalla_completa ? " · pantalla completa" : ""}`) : null, ex.revision ? " " : null, ex.revision ? h("span", { class: "badge on" }, "Revisión publicada") : null),
           h(
             "p",
             { class: "muted small meta" },
@@ -213,6 +237,7 @@ function showPanel(initialExams) {
             ex.n_abiertas ? h("button", { class: "btn small", type: "button", onclick: () => showCorrection(app, { token, ex, onBack: main, onUnauthorized }) }, "Corregir abiertas") : null,
             exportBtn,
             toggle,
+            reviewToggle,
             copy,
             h("a", { class: "btn secondary small", href: ex.results_url, target: "_blank", rel: "noopener" }, "Ver hoja de Google")
           )

@@ -483,7 +483,7 @@ const publishImg = (env, extra = {}) =>
 
 test("version: el panel puede saber qué funciones tiene el script", () => {
   const env = makeEnv();
-  assert.deepEqual(plain(env.get({ action: "version" })), { ok: true, funciones: ["imagenes", "abiertas", "correccion"] });
+  assert.deepEqual(plain(env.get({ action: "version" })), { ok: true, funciones: ["imagenes", "abiertas", "correccion", "revision"] });
 });
 
 test("imágenes: se guardan troceadas, se devuelven al alumno y las preguntas no filtran la solución", () => {

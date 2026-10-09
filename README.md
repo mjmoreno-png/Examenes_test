@@ -119,6 +119,15 @@ Escribe las preguntas en un archivo de texto con este formato (la respuesta corr
 
 La hoja de Google guarda los puntos, y la **nota final** de cada alumno (columna `nota`) se actualiza sola: test + puntos de las abiertas, sobre 10. Mientras no corrijas, `nota` es solo la del test y la columna `pendientes` sale en ámbar.
 
+**Revisión para los alumnos (ver sus fallos).** Cuando todos hayan hecho el examen, pulsa **Publicar revisión** en «Mis exámenes». A partir de ese momento, cada alumno que abra **el mismo enlace del examen en el mismo dispositivo** desde el que lo envió ve su revisión: su nota, cada pregunta marcada como correcta, incorrecta o en blanco, su respuesta y la correcta, y en las abiertas lo que escribió y los puntos que le has puesto (o «pendiente de corregir»). Funciona aunque hayas cerrado el examen, y puedes volver a ocultarla con **Ocultar revisión**.
+
+- Cada alumno solo ve **su propio** examen: el dispositivo guarda un identificador aleatorio de su envío y sin él no hay revisión.
+- Si el examen sigue abierto, el panel te pide confirmación: quien aún no lo haya hecho podría ver las soluciones a través de un compañero.
+- En un dispositivo compartido, el alumno elige su nombre de la lista de envíos hechos desde ese dispositivo.
+- Si el alumno borra los datos del navegador o usa otro dispositivo, no puede ver la revisión.
+- Solo vale para envíos hechos con esta versión: los exámenes entregados antes no guardaron el identificador en el dispositivo.
+- Requiere `Code.gs` actualizado; si no lo está, el botón no aparece.
+
 **Exportar las notas.** El botón **Exportar notas (CSV)** de cada examen descarga una tabla limpia (apellidos, nombre, grupo, nota final, aciertos, errores, en blanco, salidas, segundos fuera, intentos de pegar), ordenada por apellidos y lista para abrir en Excel en español (separador `;`, decimales con coma).
 
 **Qué ve el alumno.** Solo la parte del test: «Parte tipo test: X sobre Y puntos» y el aviso de que las abiertas las corrige el profesor. Si quitas «Mostrar la nota al alumno», no ve nada.
@@ -220,10 +229,9 @@ La nota se calcula con normalidad: la app **no pone un 0 automático**. Las colu
 
 | Señal | Qué detecta | Margen |
 |---|---|---|
-| Página oculta | Otra pestaña, otra app (cuando cubre todo), pantalla bloqueada | al instante |
-| Ventana reducida | Solo en tabletas: pantalla dividida, Slide Over o Stage Manager que reducen la ventana | 1,5 s |
-| Ventana sin foco | Hacer clic en otra ventana o app | 2 s |
-| Ratón fuera de la página | Solo en ordenadores: otra ventana, otro monitor | 2 s |
+| Página oculta | Otra pestaña, otra app (cuando cubre todo), pantalla bloqueada | al instante en ordenadores; 2 s en tabletas (al desplazarse con el dedo desde el borde, el iPad activa a veces el Dock o la multitarea un instante) |
+| Ventana reducida | Solo en tabletas: pantalla dividida, Slide Over o Stage Manager que reducen la ventana. No cuenta mientras el alumno escribe en un cuadro de texto (el teclado en pantalla también encoge la ventana) ni al ampliar con dos dedos | 1,5 s |
+| Ventana sin foco | Solo en ordenadores: hacer clic en otra ventana o app. En tabletas no se usa, porque Safari en iPad la activa al ocultar el teclado y en otros gestos sin que el alumno salga | 2 s |
 | Salir de la pantalla completa | **Solo si marcas «Exigir pantalla completa»** al publicar (opcional, desactivada por defecto). Se pide pantalla completa al empezar; si el alumno sale de ella, el examen se oculta y un **toque** en cualquier parte (o el botón) la restaura | 5 s en tabletas, 1,5 s en ordenadores |
 
 La pantalla completa es opcional porque su comportamiento depende mucho del navegador y del dispositivo. Sin ella, la vigilancia sigue funcionando con las demás señales: la pantalla dividida se detecta por el tamaño de la ventana.
@@ -231,6 +239,12 @@ La pantalla completa es opcional porque su comportamiento depende mucho del nave
 **Al empezar no se penaliza nada.** Mientras el examen no esté bien colocado (por ejemplo, empezado en pantalla dividida, o sin pantalla completa si la has exigido), el alumno ve un aviso («Pon el examen a toda la pantalla… Esto todavía no cuenta como salida») y la vigilancia no empieza hasta que lleva 1,5 s seguidos en buen estado. Si el navegador no permite la pantalla completa, no se exige. Tras pedirla, se esperan 2,5 s a que el navegador termine de cambiar de tamaño.
 
 Cada salida guarda en la hoja **qué señal la provocó** (`motivos_salida`, por ejemplo `reduced,hidden`): si en algún dispositivo salen salidas que no esperas, esa columna dice la causa.
+
+Durante un examen vigilado se pide al navegador que **mantenga la pantalla encendida**, para que el iPad no se bloquee solo mientras el alumno lee o piensa (eso contaba como salida). Funciona en iPadOS 16.4 o posterior; en versiones anteriores, sube el bloqueo automático en *Ajustes → Pantalla y brillo*.
+
+Si el iPad congela la página mientras el alumno está en otra app, la salida se cuenta igualmente al volver, con el tiempo real que estuvo fuera.
+
+El ratón fuera de la página **no** cuenta: se disparaba solo con acercarlo a la barra de pestañas o a la barra de desplazamiento, o con dejarlo en el borde. Si el alumno hace clic en otra ventana, lo detecta la señal de foco.
 
 **Lo que ninguna web puede detectar.** En un iPad, una app flotante (Slide Over) que se coloca encima **sin reducir ni quitar el foco a la ventana** no emite ninguna señal. Lo mismo ocurre con un móvil o un papel junto al ordenador. La medida eficaz para esos casos es el **Acceso guiado** del iPad (o el modo de app única del centro), que además impide abrir apps flotantes. Si en algún dispositivo una salida no se cuenta, abre `diagnostico.html` en él: muestra en directo qué señales emite.
 

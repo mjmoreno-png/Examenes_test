@@ -148,6 +148,29 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .status { position: sticky; bottom: 0; margin: 0 -16px; padding: 12px 16px; background: var(--surface); border-top: 1px solid var(--border); }
 .big-result { font-size: 2.4rem; font-weight: 700; margin: 8px 0; }
 
+/* Revisión del examen (alumno) */
+.review-qtext { margin: 0 0 10px; font-weight: 600; white-space: pre-line; }
+.review-qtext .qnum { color: var(--muted); font-weight: 700; margin-right: 6px; }
+.review-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 0; }
+.review-q.ok { border-left: 6px solid var(--ok); }
+.review-q.bad { border-left: 6px solid var(--danger); }
+.review-q.blank, .review-q.pending { border-left: 6px solid var(--warn); }
+.review-status { display: inline-block; margin: 0 0 10px; padding: 2px 10px; font-size: 0.85rem; font-weight: 700; border-radius: 999px; }
+.review-status.ok { background: var(--ok-soft); color: var(--ok); }
+.review-status.bad { background: var(--danger-soft); color: var(--danger); }
+.review-status.blank, .review-status.pending { background: var(--warn-soft); color: var(--warn); }
+.review-opt { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 8px; padding: 10px 14px; border: 2px solid var(--border); border-radius: 10px; background: var(--surface); }
+.review-opt .letter { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--border); font-weight: 700; font-size: 0.9rem; }
+.review-opt .opt-text { flex: 1; }
+.review-opt .tag { flex: none; font-size: 0.8rem; font-weight: 700; }
+.review-opt.correct { border-color: var(--ok); background: var(--ok-soft); }
+.review-opt.correct .letter { border-color: var(--ok); background: var(--ok); color: var(--surface); }
+.review-opt.correct .tag { color: var(--ok); }
+.review-opt.wrong { border-color: var(--danger); background: var(--danger-soft); }
+.review-opt.wrong .letter { border-color: var(--danger); background: var(--danger); color: var(--surface); }
+.review-opt.wrong .tag { color: var(--danger); }
+.review-open { margin: 0; padding: 10px 12px; white-space: pre-wrap; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+
 /* Panel del profesor */
 .q-preview { margin: 0 0 12px; padding: 0 0 12px; border-bottom: 1px solid var(--border); }
 .q-preview:last-child { border-bottom: 0; }

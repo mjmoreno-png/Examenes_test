@@ -36,3 +36,10 @@ test("histéresis: una vez reducida, hace falta recuperar más para considerarla
   assert.equal(isReducedWindow({ ...w, wasReduced: false }), false);
   assert.equal(isReducedWindow({ ...w, wasReduced: true }), true);
 });
+
+test("el teclado en pantalla al escribir no cuenta como ventana reducida", () => {
+  const keyboard = { ...ipad, innerWidth: 1180, innerHeight: 380 };
+  assert.equal(isReducedWindow({ ...keyboard, typing: true }), false);
+  assert.equal(isReducedWindow({ ...keyboard, typing: true, wasReduced: true }), false);
+  assert.equal(isReducedWindow({ ...ipad, innerWidth: 590, innerHeight: 700, typing: false }), true);
+});

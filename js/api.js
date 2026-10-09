@@ -62,6 +62,7 @@ export function apiPost(body) {
 
 export const fetchExam = (id, code = "") => apiGet({ action: "exam", id, code });
 export const submitExam = (payload) => apiPost({ action: "submit", ...payload });
+export const fetchReview = (examId, envioId) => apiPost({ action: "review", examId, envioId });
 
 /**
  * Envío "de despedida" para cuando la página se oculta (el alumno cambia de app).

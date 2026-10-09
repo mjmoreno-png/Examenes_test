@@ -26,22 +26,40 @@
     </div>
   </main>
   <script type="module">
-    import { isReducedWindow, isAway, REDUCED_RATIO } from "./js/presence.js";
+    import { isReducedWindow, REDUCED_RATIO } from "./js/presence.js";
+    import { createWatcher } from "./js/watch.js";
+    const watcher = createWatcher();
+    let blurred = false;
+    addEventListener("blur", () => (blurred = true));
+    addEventListener("focus", () => (blurred = false));
+    let last = "—";
+    const vw = () => document.documentElement.clientWidth || innerWidth;
+    const vh = () => document.documentElement.clientHeight || innerHeight;
+    let wake = navigator.wakeLock ? "pidiendo…" : "no disponible";
+    async function keepOn() {
+      if (!navigator.wakeLock || document.hidden) return;
+      try { const l = await navigator.wakeLock.request("screen"); wake = "activa"; l.addEventListener("release", () => (wake = "soltada")); }
+      catch (e) { wake = "rechazada: " + e.message; }
+    }
+    keepOn();
+    document.addEventListener("visibilitychange", keepOn);
     const t0 = Date.now();
     const log = document.getElementById("log");
     const state = document.getElementById("state");
     const snap = () => ({
       hasFocus: document.hasFocus(),
       hidden: document.hidden,
-      ventana: `${innerWidth}x${innerHeight}`,
+      ventana: `${vw()}x${vh()}`,
+      zoom: (visualViewport?.scale ?? 1).toFixed(2),
       pantalla: `${screen.width}x${screen.height}`,
-      proporcion: ((innerWidth * innerHeight) / (screen.width * screen.height)).toFixed(2),
+      proporcion: ((vw() * vh()) / (screen.width * screen.height)).toFixed(2),
       tactil: matchMedia("(pointer: coarse)").matches,
       raton: matchMedia("(pointer: fine)").matches,
       fullscreen: Boolean(document.fullscreenElement || document.webkitFullscreenElement),
       fsSoportada: Boolean(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen),
     });
-    const reduced = () => isReducedWindow({ innerWidth, innerHeight, screenWidth: screen.width, screenHeight: screen.height, coarse: matchMedia("(pointer: coarse)").matches });
+    const typing = () => Boolean(document.activeElement?.matches?.("textarea, input, [contenteditable]"));
+    const reduced = () => isReducedWindow({ innerWidth: vw(), innerHeight: vh(), screenWidth: screen.width, screenHeight: screen.height, coarse: matchMedia("(pointer: coarse)").matches, typing: typing() });
     function write(kind) {
       const s = snap();
       const line = `${((Date.now() - t0) / 1000).toFixed(1).padStart(6)} s  ${kind.padEnd(18)} foco=${s.hasFocus} oculta=${s.hidden} completa=${s.fullscreen} ventana=${s.ventana} prop=${s.proporcion}`;
@@ -52,18 +70,24 @@
     }
     function paint() {
       const s = snap();
+      const r = watcher.update({ hidden: s.hidden, reduced: reduced(), blurred, noFocus: !s.hasFocus }, Date.now());
+      if (r.leave) { last = r.leave.reason; write("SALIDA: " + r.leave.reason); }
       const rows = [
         ["La página tiene el foco (hasFocus)", s.hasFocus],
         ["La página está oculta", s.hidden],
         ["Tamaño de la ventana", s.ventana],
         ["Tamaño de la pantalla", s.pantalla],
+        ["Zoom con los dedos", s.zoom],
+        ["Pantalla siempre encendida (evita el bloqueo automático)", wake],
         [`Proporción ventana/pantalla (se considera pantalla dividida por debajo de ${REDUCED_RATIO})`, s.proporcion],
         ["Pantalla táctil", s.tactil],
         ["Ratón (puntero fino)", s.raton],
         ["Admite pantalla completa", s.fsSoportada],
         ["En pantalla completa ahora", s.fullscreen],
         ["¿Cuenta como pantalla dividida?", reduced()],
-        ["¿Contaría como salida?", isAway({ hidden: s.hidden, reduced: reduced(), noFocusMs: s.hasFocus ? 0 : 1000 })],
+        ["Escribiendo en un cuadro de texto", typing()],
+        ["Estado de la vigilancia", watcher.isAway() ? "FUERA (contaría como salida)" : watcher.isArmed() ? "vigilando" : "preparando"],
+        ["Motivo de la última salida", last],
       ];
       state.replaceChildren(...rows.map(([k, v]) => { const tr = document.createElement("tr"); const a = document.createElement("td"); a.textContent = k; const b = document.createElement("td"); b.textContent = String(v); b.style.fontWeight = "700"; tr.append(a, b); return tr; }));
     }

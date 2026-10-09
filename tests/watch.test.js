@@ -132,3 +132,32 @@ test("márgenes personalizados: en ordenadores la pantalla completa perdida cuen
   assert.equal(r.events[0].leave.reason, "fullscreenLost");
   assert.equal(r.events[0].t - T0, 1500);
 });
+
+test("iPad: un instante oculta dentro del margen (gesto del sistema al desplazarse) no cuenta", () => {
+  const w = createWatcher({ grace: { hidden: 2000 } });
+  run(w, {}, 0, ARM_MS + 200);
+  const r = run(w, { hidden: true }, T0, T0 + 600);
+  const r2 = run(w, {}, T0 + 700, T0 + 3000);
+  assert.deepEqual([...r.events, ...r2.events], []);
+});
+
+test("página congelada en segundo plano: al volver se cuenta la salida con su duración real", () => {
+  const w = createWatcher({ grace: { hidden: 2000 } });
+  run(w, {}, 0, ARM_MS + 200);
+  w.update({ hidden: true }, T0); // se oculta y el temporizador deja de correr
+  const r = w.update({}, T0 + 30000); // vuelve 30 s después
+  assert.deepEqual(r.leave, { reason: "hidden", since: T0 });
+  assert.equal(r.back.awayMs, 30000);
+  assert.equal(r.phase, "armed");
+});
+
+test("congelada y al volver sigue otra señal activa: queda fuera hasta que se resuelva", () => {
+  const w = createWatcher({ grace: { hidden: 2000 } });
+  run(w, {}, 0, ARM_MS + 200);
+  w.update({ hidden: true }, T0);
+  let r = w.update({ reduced: true }, T0 + 10000);
+  assert.equal(r.leave.reason, "hidden");
+  assert.equal(r.phase, "away");
+  r = w.update({}, T0 + 12000);
+  assert.equal(r.back.awayMs, 12000);
+});
