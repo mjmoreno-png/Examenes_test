@@ -2,6 +2,7 @@
 // con una dirección "data:" que se valida antes.
 import { h } from "./dom.js";
 import { splitRich, parseDataUrl } from "./images.js";
+import { BLANK } from "./short.js";
 
 /**
  * @param {string} text enunciado, con ![descripción](archivo.png)
@@ -9,7 +10,8 @@ import { splitRich, parseDataUrl } from "./images.js";
  * @returns {(string|Node)[]} nodos para pasar a h(...)
  */
 export function richNodes(text, images = {}) {
-  return splitRich(text).map((part) => {
+  // Donde va un cuadro de respuesta (preguntas de respuesta corta con varios cuadros) se ve una raya.
+  return splitRich(String(text ?? "").split(BLANK).join("____")).map((part) => {
     if (part.type === "text") return part.text;
     const src = images?.[part.name];
     if (!parseDataUrl(src)) {

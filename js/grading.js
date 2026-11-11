@@ -1,4 +1,5 @@
 // Corrección con penalización por error. Función pura.
+import { shortBlanks, shortIsBlank, shortAllCorrect } from "./short.js";
 // La misma lógica está replicada en apps-script/Code.gs: si cambia una, cambia la otra.
 
 const gcd = (a, b) => (b === 0 ? a : gcd(b, a % b));
@@ -37,23 +38,34 @@ export function questionValue(q) {
 /** Las preguntas abiertas no se corrigen solas: las evalúa el profesor en la hoja. */
 export const isOpenQuestion = (q) => q?.tipo === "abierta";
 
+/** Las de respuesta corta se corrigen solas comparando el texto con las respuestas aceptadas. */
+export const isShortQuestion = (q) => q?.tipo === "corta";
+
+/** De la parte convalidable: quien la tiene convalidada recibe sus puntos sin contestarla. */
+export const isConvalidableQuestion = (q) => typeof q?.convalidable === "string";
+
 /**
  * Corrige la parte tipo test. Cada pregunta vale `valor` puntos (1 por defecto):
  * acierto +valor, error −valor × penalización, en blanco 0. Las preguntas abiertas no puntúan aquí,
  * pero su valor cuenta en el total, de modo que la nota final queda sobre 10 con todas las preguntas.
+ * Las de respuesta corta cuentan como las de test (acierto, error o en blanco), pero sus errores no restan.
  *
- * @param {{id:string, valor?:number, tipo?:string, options:{id:string}[], correct:string}[]} questions
- * @param {Record<string,string|null|undefined>} answers  id de pregunta -> id de opción (o null/ausente = en blanco)
- * @param {{allowNegative?: boolean, penalty?: {num:number, den:number}|null}} [opts]
+ * @param {{id:string, valor?:number, tipo?:string, options:{id:string}[], correct:string, respuestas?:string[]}[]} questions
+ * @param {Record<string,string|null|undefined>} answers  id de pregunta -> id de opción, o el texto escrito
+ *   en las de respuesta corta (null/ausente/vacío = en blanco)
+ * @param {{allowNegative?: boolean, penalty?: {num:number, den:number}|null, shortOverrides?: Record<string,boolean>}} [opts]
  *   penalty: fracción de punto que resta cada error; null/ausente = 1/(opciones-1) en cada pregunta
+ *   shortOverrides: respuestas cortas corregidas a mano (id de pregunta -> correcta o no)
+ *   convalidada: el alumno tiene convalidada la parte convalidable: esas preguntas suman sus puntos enteros
+ *   (no cuentan como aciertos, errores ni en blanco, sino en `convalidadas`) y lo que haya contestado en ellas se ignora
  * @returns {{aciertos:number, errores:number, blancos:number, puntos:number, puntosTest:number,
- *            puntosTestMax:number, puntosTotal:number, abiertas:number, nota:number}}
+ *            puntosTestMax:number, puntosTotal:number, abiertas:number, convalidadas:number, nota:number}}
  *   puntos = puntos del test sin recortar; puntosTest = lo mismo redondeado y, salvo nota negativa,
  *   no menor que 0 (es lo que ve el alumno); puntosTotal = suma de los valores de TODAS las preguntas;
  *   nota = puntos / puntosTotal × 10 (provisional si hay preguntas abiertas sin corregir).
  */
 export function gradeExam(questions, answers, opts = {}) {
-  const { allowNegative = false, penalty = null } = opts;
+  const { allowNegative = false, penalty = null, shortOverrides = {}, convalidada = false } = opts;
   if (!questions.length) throw new Error("El examen no tiene preguntas.");
 
   let aciertos = 0;
@@ -65,6 +77,7 @@ export function gradeExam(questions, answers, opts = {}) {
   let puntosTestMax = 0;
   let puntosTotal = 0;
   let abiertas = 0;
+  let convalidadas = 0;
 
   for (const q of questions) {
     const valor = questionValue(q);
@@ -74,7 +87,29 @@ export function gradeExam(questions, answers, opts = {}) {
       continue;
     }
     puntosTestMax += valor;
+    if (convalidada && isConvalidableQuestion(q)) {
+      convalidadas++;
+      valorAciertos += valor;
+      continue;
+    }
     const given = answers?.[q.id];
+    if (isShortQuestion(q)) {
+      // Un cuadro: un texto. Varios cuadros: una lista de textos (o null), uno por cuadro.
+      const multi = shortBlanks(q).length > 1;
+      const ok = multi
+        ? Array.isArray(given) && given.length <= shortBlanks(q).length && given.every((v) => v === null || typeof v === "string")
+        : typeof given === "string";
+      if (given !== undefined && given !== null && !ok) {
+        throw new Error(`Respuesta no válida en ${q.id}`);
+      }
+      // Todo o nada: con varios cuadros solo está bien si lo están todos; en blanco, si no rellenó ninguno.
+      if (shortIsBlank(q, given)) blancos++;
+      else if (typeof shortOverrides[q.id] === "boolean" ? shortOverrides[q.id] : shortAllCorrect(q, given)) {
+        aciertos++;
+        valorAciertos += valor;
+      } else errores++; // sin penalización: es difícil acertar escribiendo al azar
+      continue;
+    }
     if (given === undefined || given === null || given === "") {
       blancos++;
       continue;
@@ -103,5 +138,5 @@ export function gradeExam(questions, answers, opts = {}) {
   nota = round2(nota);
   const puntosTest = round2(!allowNegative && puntos < 0 ? 0 : puntos);
 
-  return { aciertos, errores, blancos, puntos, puntosTest, puntosTestMax: round2(puntosTestMax), puntosTotal: round2(puntosTotal), abiertas, nota };
+  return { aciertos, errores, blancos, puntos, puntosTest, puntosTestMax: round2(puntosTestMax), puntosTotal: round2(puntosTotal), abiertas, convalidadas, nota };
 }

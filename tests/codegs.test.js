@@ -29,19 +29,31 @@ test("gradeExam_ de Code.gs coincide con js/grading.js en 2000 casos aleatorios"
       const q = { id: `q${i + 1}`, options: ids.map((id) => ({ id })), correct: ids[Math.floor(rnd() * k)] };
       const r = rnd();
       if (r < 0.2) { q.tipo = "abierta"; q.options = []; q.correct = null; }
+      else if (r < 0.35) { q.tipo = "corta"; q.options = []; q.correct = null; q.respuestas = ["NaCl", "cloruro de sodio"]; }
+      else if (r < 0.45) { q.tipo = "corta"; q.options = []; q.correct = null; q.text = "Fe2O3\nPrefijos: \uE000\nStock: \uE000"; q.huecos = [["trióxido de dihierro"], ["óxido de hierro(III)", "óxido férrico"]]; }
       if (r > 0.4) q.valor = Math.round((0.25 + rnd() * 4) * 4) / 4;
+      if (q.tipo !== "abierta" && rnd() < 0.2) q.convalidable = "formulación";
       return q;
     });
     const ans = {};
     for (const q of qs) {
       const r = rnd();
       if (r < 0.25 || q.tipo === "abierta") continue;
+      if (q.tipo === "corta" && q.huecos) {
+        const pick = ["trióxido de dihierro", "Óxido de hierro (III)", "", null, "óxido de hierro(iii)"];
+        ans[q.id] = [pick[Math.floor(rnd() * 5)], pick[Math.floor(rnd() * 5)]].slice(0, 1 + Math.floor(rnd() * 2));
+        continue;
+      }
+      if (q.tipo === "corta") { ans[q.id] = ["NaCl", "nacl", "Cloruro de Sodio", "  ", "KCl"][Math.floor(rnd() * 5)]; continue; }
       ans[q.id] = r < 0.6 ? q.correct : q.options[Math.floor(rnd() * q.options.length)].id;
     }
     const allowNegative = rnd() < 0.5;
+    const shortOverrides = {};
+    for (const q of qs) if (q.tipo === "corta" && rnd() < 0.3) shortOverrides[q.id] = rnd() < 0.5;
+    const convalidada = rnd() < 0.5;
     assert.deepEqual(
-      JSON.parse(JSON.stringify(gradeServer(qs, ans, { allowNegative }))),
-      gradeExam(qs, ans, { allowNegative })
+      JSON.parse(JSON.stringify(gradeServer(qs, ans, { allowNegative, shortOverrides, convalidada }))),
+      gradeExam(qs, ans, { allowNegative, shortOverrides, convalidada })
     );
     // con penalización propia (fracción a/b)
     const den = 1 + Math.floor(rnd() * 9);
@@ -251,7 +263,7 @@ test("hojas de resultados antiguas reciben las columnas nuevas por nombre", () =
   sheet.rows = [["fecha", "nombre", "grupo", "aciertos", "errores", "blancos", "nota", "duracion_min", "posible_duplicado", "respuestas_json"]];
   assert.equal(env.post({ action: "submit", examId: id, nombre: "Ana", apellidos: "López", grupo: "B", respuestas: {}, envioId: "x1" }).ok, true);
   const h = sheet.rows[0];
-  assert.deepEqual(plain(h.slice(10)), ["salidas", "segundos_fuera", "tipo_envio", "envio_id", "motivos_salida", "puntos_test", "puntos_total", "pegados"]);
+  assert.deepEqual(plain(h.slice(10)), ["salidas", "segundos_fuera", "tipo_envio", "envio_id", "motivos_salida", "puntos_test", "puntos_total", "pegados", "desconexiones", "segundos_sin_conexion", "cambios_escritorio", "segundos_escritorio", "ventanas_encima", "segundos_ventana_encima"]);
   assert.ok(!h.includes("apellidos"), "no se inserta una columna en medio de una hoja ya en uso");
   assert.equal(cell(sheet.rows, 1, "nombre"), "López, Ana", "en hojas anteriores el nombre se guarda como Apellidos, Nombre");
 });
@@ -469,7 +481,7 @@ test("las hojas anteriores (sin apellidos) siguen funcionando y no se reordenan"
   submitAs(env, id, "Pedro", "Álvarez");
   const rows = sheet.rows;
   assert.deepEqual([cell(rows, 1, "nombre"), cell(rows, 2, "nombre")], ["Zapata, Marta", "Álvarez, Pedro"], "orden de llegada");
-  assert.equal(rows[0].length, 18, "solo se añaden columnas al final (puntos_test, puntos_total, pegados)");
+  assert.equal(rows[0].length, 24, "solo se añaden columnas al final (puntos_test, puntos_total, pegados, desconexiones, segundos_sin_conexion, cambios_escritorio, segundos_escritorio, ventanas_encima, segundos_ventana_encima)");
 });
 
 /* ------------------------- imágenes en los enunciados ------------------------- */
@@ -483,7 +495,7 @@ const publishImg = (env, extra = {}) =>
 
 test("version: el panel puede saber qué funciones tiene el script", () => {
   const env = makeEnv();
-  assert.deepEqual(plain(env.get({ action: "version" })), { ok: true, funciones: ["imagenes", "abiertas", "correccion", "revision"] });
+  assert.deepEqual(plain(env.get({ action: "version" })), { ok: true, funciones: ["imagenes", "abiertas", "correccion", "revision", "cortas", "instrucciones", "exportar", "cuadros", "practica", "convertir_practica", "convalidable", "margen"] });
 });
 
 test("imágenes: se guardan troceadas, se devuelven al alumno y las preguntas no filtran la solución", () => {
@@ -565,4 +577,52 @@ test("imágenes: las imágenes de un examen no se mezclan con las de otro", () =
   const b = publishImg(env, { imagenes: [{ nombre: "grafica1.png", mime: "image/png", data: fakeB64(500, "B") }, ...imgs("Circuito-2.png")] });
   assert.ok(env.get({ action: "exam", id: a.id }).exam.imagenes["grafica1.png"].endsWith("A".repeat(500)));
   assert.ok(env.get({ action: "exam", id: b.id }).exam.imagenes["grafica1.png"].endsWith("B".repeat(500)));
+});
+
+test("desconexiones: se guardan, no son salidas, y el reenvío del mismo envío conserva el máximo", () => {
+  const env = makeEnv();
+  const id = publish(env);
+  const base = { action: "submit", examId: id, nombre: "Ana", apellidos: "López", grupo: "B", respuestas: {}, envioId: "c1" };
+  assert.equal(env.post({ ...base, desconexiones: 2, segundos_sin_conexion: 37.26, motivos_salida: "offline,offline" }).ok, true);
+  env.post({ ...base, desconexiones: 1, segundos_sin_conexion: 5 }); // un reenvío con datos menores no los reduce
+  const rows = env.results(id).rows;
+  assert.equal(rows.length, 2);
+  assert.deepEqual([cell(rows, 1, "desconexiones"), cell(rows, 1, "segundos_sin_conexion"), cell(rows, 1, "salidas"), cell(rows, 1, "motivos_salida")], [2, 37.3, 0, "offline,offline"]);
+  env.post({ ...base, envioId: "c2", nombre: "Eva", desconexiones: -3, segundos_sin_conexion: "x" });
+  const r2 = env.results(id).rows;
+  assert.deepEqual([cell(r2, 2, "desconexiones"), cell(r2, 2, "segundos_sin_conexion")], [0, 0]);
+  const res = env.post({ action: "results", token: "secreto", examId: id });
+  assert.deepEqual(plain(res.rows.map((r) => r.desconexiones).sort()), [0, 2]);
+});
+
+test("cambios de escritorio: se guardan, no son salidas, y el reenvío del mismo envío conserva el máximo", () => {
+  const env = makeEnv();
+  const id = publish(env, { control_salidas: true });
+  const base = { action: "submit", examId: id, nombre: "Ana", apellidos: "López", grupo: "2A", respuestas: {}, envioId: "d1" };
+  assert.equal(env.post({ ...base, cambios_escritorio: 3, segundos_escritorio: 7.44, motivos_salida: "mouseOut,mouseOut,mouseOut" }).ok, true);
+  env.post({ ...base, cambios_escritorio: 1, segundos_escritorio: 2 }); // un reenvío con datos menores no los reduce
+  const rows = env.results(id).rows;
+  assert.equal(rows.length, 2);
+  assert.deepEqual([cell(rows, 1, "cambios_escritorio"), cell(rows, 1, "segundos_escritorio"), cell(rows, 1, "salidas")], [3, 7.4, 0]);
+  const h = rows[0];
+  assert.ok(h.indexOf("cambios_escritorio") === h.indexOf("segundos_fuera") + 1, "junto a las salidas, en la parte visible");
+  env.post({ ...base, envioId: "d2", nombre: "Eva", cambios_escritorio: -2, segundos_escritorio: "x" });
+  const r2 = env.results(id).rows;
+  assert.deepEqual([cell(r2, 2, "cambios_escritorio"), cell(r2, 2, "segundos_escritorio")], [0, 0]);
+  const res = env.post({ action: "results", token: "secreto", examId: id });
+  assert.deepEqual(plain(res.rows.map((r) => r.cambios_escritorio).sort()), [0, 3]);
+});
+
+test("ventanas encima: se guardan junto al cambio de escritorio y no son salidas", () => {
+  const env = makeEnv();
+  const id = publish(env, { control_salidas: true });
+  const base = { action: "submit", examId: id, nombre: "Ana", apellidos: "López", grupo: "2A", respuestas: {}, envioId: "v1" };
+  assert.equal(env.post({ ...base, ventanas_encima: 2, segundos_ventana_encima: 6.04, motivos_salida: "overlay,overlay" }).ok, true);
+  env.post({ ...base, ventanas_encima: 1, segundos_ventana_encima: 1 });
+  const rows = env.results(id).rows;
+  assert.deepEqual([cell(rows, 1, "ventanas_encima"), cell(rows, 1, "segundos_ventana_encima"), cell(rows, 1, "salidas")], [2, 6, 0]);
+  const h = rows[0];
+  assert.equal(h.indexOf("ventanas_encima"), h.indexOf("segundos_escritorio") + 1);
+  const res = env.post({ action: "results", token: "secreto", examId: id });
+  assert.deepEqual(plain(res.rows.map((r) => [r.ventanas_encima, r.segundos_ventana_encima])), [[2, 6]]);
 });

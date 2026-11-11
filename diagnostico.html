@@ -10,7 +10,7 @@
 <body>
   <main class="page">
     <h1>Diagnóstico de salidas</h1>
-    <p class="muted">Página para comprobar qué señales emite este dispositivo cuando el alumno sale del examen. Ábrela en el iPad, cambia de app, pon otra web al lado (pantalla dividida), vuelve y mira el registro.</p>
+    <p class="muted">Página para comprobar qué señales emite este dispositivo cuando el alumno sale del examen. Ábrela en el iPad, cambia de app, pon otra web al lado (pantalla dividida), vuelve y mira el registro. En ordenadores, al salir y volver el ratón se anota su posición y si salió por un borde o por el centro de la ventana.</p>
 
     <div class="card">
       <h2>Estado ahora</h2>
@@ -26,7 +26,7 @@
     </div>
   </main>
   <script type="module">
-    import { isReducedWindow, REDUCED_RATIO } from "./js/presence.js";
+    import { isReducedWindow, REDUCED_RATIO, trackLargest } from "./js/presence.js";
     import { createWatcher } from "./js/watch.js";
     const watcher = createWatcher();
     let blurred = false;
@@ -59,15 +59,37 @@
       fsSoportada: Boolean(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen),
     });
     const typing = () => Boolean(document.activeElement?.matches?.("textarea, input, [contenteditable]"));
-    const reduced = () => isReducedWindow({ innerWidth: vw(), innerHeight: vh(), screenWidth: screen.width, screenHeight: screen.height, coarse: matchMedia("(pointer: coarse)").matches, typing: typing() });
-    function write(kind) {
+    let largest = null; // ventana más grande vista: referencia de pantalla completa en iPad que dan como pantalla el tamaño de la ventana
+    const reduced = () => { largest = trackLargest(largest, vw(), vh()); return isReducedWindow({ innerWidth: vw(), innerHeight: vh(), screenWidth: screen.width, screenHeight: screen.height, coarse: matchMedia("(pointer: coarse)").matches, typing: typing(), largest }); };
+    function write(kind, extra = "") {
       const s = snap();
-      const line = `${((Date.now() - t0) / 1000).toFixed(1).padStart(6)} s  ${kind.padEnd(18)} foco=${s.hasFocus} oculta=${s.hidden} completa=${s.fullscreen} ventana=${s.ventana} prop=${s.proporcion}`;
+      const line = `${((Date.now() - t0) / 1000).toFixed(1).padStart(6)} s  ${kind.padEnd(18)} ${extra ? extra + " " : ""}foco=${s.hasFocus} oculta=${s.hidden} completa=${s.fullscreen} ventana=${s.ventana} prop=${s.proporcion}`;
       log.textContent = line + "\n" + log.textContent;
     }
-    for (const [target, names] of [[window, ["blur", "focus", "pagehide", "pageshow", "resize", "orientationchange"]], [document, ["visibilitychange", "fullscreenchange", "webkitfullscreenchange"]], [document.documentElement, ["mouseleave", "mouseenter"]]]) {
+    for (const [target, names] of [[window, ["blur", "focus", "pagehide", "pageshow", "resize", "orientationchange"]], [document, ["visibilitychange", "fullscreenchange", "webkitfullscreenchange", "focusin", "focusout"]]]) {
       for (const n of names) target.addEventListener(n, () => write(n));
     }
+    // Posición del ratón al salir de la página y al volver: una salida lejos de los bordes no puede ser un
+    // movimiento del ratón (la ventana se ha ido de debajo del puntero, p. ej. gesto de cambio de escritorio).
+    const EDGE_PX = 8;
+    let lastMove = null; // última posición conocida del ratón
+    let outAt = null; // instante de la última salida
+    addEventListener("mousemove", (e) => (lastMove = { x: e.clientX, y: e.clientY }));
+    function where(e) {
+      const x = Math.round(e.clientX), y = Math.round(e.clientY);
+      const edges = [["arriba", y], ["abajo", vh() - y], ["izquierda", x], ["derecha", vw() - x]];
+      const [edge, d] = edges.reduce((a, b) => (b[1] < a[1] ? b : a));
+      const zona = d <= EDGE_PX ? `borde ${edge}` : `CENTRO (a ${Math.round(d)} px del borde ${edge})`;
+      const prev = lastMove ? ` último movimiento=(${Math.round(lastMove.x)},${Math.round(lastMove.y)})` : "";
+      return `pos=(${x},${y}) ${zona}${prev}`;
+    }
+    document.documentElement.addEventListener("mouseleave", (e) => { outAt = Date.now(); write("mouseleave", where(e)); });
+    document.documentElement.addEventListener("mouseenter", (e) => {
+      const fuera = outAt ? ` fuera=${((Date.now() - outAt) / 1000).toFixed(1)} s` : "";
+      outAt = null;
+      write("mouseenter", where(e) + fuera);
+    });
+
     function paint() {
       const s = snap();
       const r = watcher.update({ hidden: s.hidden, reduced: reduced(), blurred, noFocus: !s.hasFocus }, Date.now());
@@ -77,6 +99,7 @@
         ["La página está oculta", s.hidden],
         ["Tamaño de la ventana", s.ventana],
         ["Tamaño de la pantalla", s.pantalla],
+        ["Ventana más grande vista (referencia de pantalla completa)", largest ? `${largest.width}x${largest.height}` : "—"],
         ["Zoom con los dedos", s.zoom],
         ["Pantalla siempre encendida (evita el bloqueo automático)", wake],
         [`Proporción ventana/pantalla (se considera pantalla dividida por debajo de ${REDUCED_RATIO})`, s.proporcion],

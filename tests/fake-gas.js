@@ -17,6 +17,7 @@ class FakeSheet {
   getDataRange() { return { getValues: () => this.rows.map((r) => [...r]) }; }
   getRange(row, col, nRows = 1, nCols = 1) {
     return {
+      col,
       setFontWeight() { return this; }, setBackground() { return this; }, setFontColor() { return this; }, setHorizontalAlignment() { return this; },
       setFormulaR1C1: (formula) => { this.rows[row - 1][col - 1] = formula; },
       setValue: (v) => { this.rows[row - 1][col - 1] = this.textCells.has(`${row},${col}`) ? v : coerce(v); },
@@ -58,6 +59,14 @@ class FakeSheet {
   setFrozenColumns() {}
   setColumnWidth() {}
   hideColumns(c, n) { this.hidden = [c, n]; }
+  showColumns() {}
+  getBandings() { return []; }
+  // Como Sheets: mueve la columna de `range` delante de la posición `dest` (índices desde 1, antes de mover).
+  moveColumns(range, dest) {
+    const from = range.col - 1;
+    const to = dest - 1 > from ? dest - 2 : dest - 1;
+    this.rows.forEach((r) => { while (r.length <= from) r.push(""); r.splice(to, 0, r.splice(from, 1)[0]); });
+  }
 }
 
 export function makeEnv(token = "secreto", { uuid: uuidFn } = {}) {

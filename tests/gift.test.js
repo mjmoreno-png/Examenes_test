@@ -88,7 +88,7 @@ test("error si hay más de una correcta", () => {
 });
 
 test("error si hay menos de 2 opciones", () => {
-  assert.throws(() => parseGift("A{=x}"), /Pregunta 1.*al menos 2/);
+  assert.throws(() => parseGift("A{~x}"), /Pregunta 1.*al menos 2/);
 });
 
 test("error si falta el bloque de respuestas o el cierre", () => {
@@ -98,7 +98,7 @@ test("error si falta el bloque de respuestas o el cierre", () => {
 
 test("recoge todos los errores a la vez", () => {
   try {
-    parseGift("A{=x}\n\nB{=x~y}\n\nC{~x~y}");
+    parseGift("A{~x}\n\nB{=x~y}\n\nC{~x~y}");
     assert.fail("debía fallar");
   } catch (e) {
     assert.equal(e.errors.length, 2);
@@ -173,4 +173,27 @@ test("preguntas test y abiertas mezcladas; los errores de test siguen indicando 
 
 test("una pregunta con contenido sin = ni ~ sigue siendo un error (no se toma por abierta)", () => {
   assert.throws(() => parseGift("A{texto suelto}"), /Pregunta 1.*al menos 2 opciones/);
+});
+
+test("toGift: parseGift lee lo exportado exactamente igual (test, corta, abierta, valores y caracteres especiales)", async () => {
+  const { toGift } = await import("../js/gift.js");
+  const src = `${SAMPLE}
+
+::C1::[valor=0,5] Fórmula de la sal{=NaCl =ClNa}
+
+::A1::[valor=2,25] Explica: ¿por qué \\{a\\} \\= b?\\nSegunda línea con \\\\ barra{}
+
+Sin título #1 con ~ y = y ![gráfica](g1.png){=sí ~no ~a\\:b}`;
+  const qs = parseGift(src);
+  const out = toGift(qs, "Exportado\nsegunda línea");
+  assert.ok(out.startsWith("// Exportado\n// segunda línea\n\n"));
+  assert.deepEqual(parseGift(out), qs);
+});
+
+test("toGift: textos raros de ida y vuelta", async () => {
+  const { toGift } = await import("../js/gift.js");
+  const weird = ["a:b", "::x::", "{=}", "~#", "\\", "\\n literal", "// parece comentario", "línea\nnueva", "fin\\"];
+  const qs = weird.map((t, i) => ({ id: `q${i + 1}`, title: i % 2 ? t : "", text: t, options: [{ id: "a", text: t }, { id: "b", text: "otra" }], correct: "a", valor: 1, tipo: "test" }));
+  qs.push({ id: `q${qs.length + 1}`, title: "", text: "// sin título", options: [], correct: null, respuestas: ["a=b", "c#d"], valor: 1, tipo: "corta" });
+  assert.deepEqual(parseGift(toGift(qs)), qs);
 });

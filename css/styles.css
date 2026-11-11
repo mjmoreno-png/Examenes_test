@@ -82,6 +82,8 @@ h2 { font-size: 1.2rem; margin: 0 0 8px; }
   border-radius: 8px;
 }
 .field textarea { min-height: 160px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9rem; }
+.field textarea.plain { min-height: 110px; font: inherit; }
+.exam-instructions p { white-space: pre-wrap; }
 .field .hint { display: block; font-size: 0.85rem; color: var(--muted); margin-top: 4px; }
 .field .err { display: block; font-size: 0.9rem; color: var(--danger); margin-top: 4px; }
 .check { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0 0 6px; }
@@ -118,8 +120,12 @@ h2 { font-size: 1.2rem; margin: 0 0 8px; }
 
 /* Preguntas */
 fieldset.question { border: 0; margin: 0; padding: 0; min-width: 0; }
+/* Cada pregunta es una tarjeta: el reinicio de fieldset.question no debe quitarle el borde ni el margen interior. */
+fieldset.question.question-card { border: 1px solid var(--border); padding: 18px; margin: 0 0 16px; min-width: 0; }
 .question-card { scroll-margin-top: 70px; }
-.question-card legend { padding: 0; font-weight: 600; margin-bottom: 10px; white-space: pre-line; }
+/* El enunciado (legend) flota para quedar dentro de la tarjeta, no encima de su borde. */
+.question-card legend { float: left; width: 100%; padding: 0; font-weight: 600; margin-bottom: 12px; white-space: pre-line; overflow-wrap: anywhere; }
+.question-card legend + * { clear: both; }
 .question-card .qnum { color: var(--muted); font-weight: 700; margin-right: 6px; }
 
 .option { display: block; margin: 0 0 8px; }
@@ -170,6 +176,8 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .review-opt.wrong .letter { border-color: var(--danger); background: var(--danger); color: var(--surface); }
 .review-opt.wrong .tag { color: var(--danger); }
 .review-open { margin: 0; padding: 10px 12px; white-space: pre-wrap; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.review-open.wrong { border-color: var(--danger); background: var(--danger-soft); }
+.review-open.correct { border-color: var(--ok); background: var(--ok-soft); font-weight: 600; }
 
 /* Panel del profesor */
 .q-preview { margin: 0 0 12px; padding: 0 0 12px; border-bottom: 1px solid var(--border); }
@@ -226,6 +234,12 @@ dialog.warning h2 { color: var(--danger); }
 
 /* Respuesta abierta */
 .open-box { margin-top: 10px; }
+.blank-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 12px; }
+.blank-label { font-weight: 600; min-width: 6.5em; }
+.blank-row .short-answer.open-answer { flex: 1 1 260px; min-width: 0; max-width: none; }
+.review-blank { margin: 0 0 10px; }
+.short-answer.open-answer { min-height: 52px; max-width: 100%; padding: 12px 14px; font-size: 1.15rem; resize: none; }
+.open-box .hint { display: block; margin-top: 6px; color: var(--muted); font-size: 0.85rem; }
 .open-answer { width: 100%; min-height: 140px; padding: 10px 12px; font: inherit; border: 1px solid var(--border); border-radius: 8px; color: var(--text); background: var(--bg); resize: vertical; -webkit-user-select: text; user-select: text; }
 .points-badge { display: inline-block; margin-left: 8px; padding: 1px 8px; font-size: 0.8rem; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; white-space: nowrap; vertical-align: middle; }
 
@@ -241,6 +255,8 @@ dialog.warning h2 { color: var(--danger); }
 .progress-bar { height: 100%; background: var(--ok); border-radius: 999px; transition: width 0.25s; }
 .answer-card { margin: 0 0 12px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-left: 6px solid var(--warn); border-radius: var(--radius); box-shadow: var(--shadow); }
 .answer-card.graded { border-left-color: var(--ok); }
+.answer-card.wrong { border-left-color: var(--danger); }
+.answer-card.leaving { opacity: 0; transition: opacity 0.3s; }
 .answer-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 8px; }
 .answer-text { padding: 12px 14px; font-size: 1.02rem; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; max-height: 420px; overflow: auto; }
 .answer-text.empty { color: var(--muted); font-style: italic; }
